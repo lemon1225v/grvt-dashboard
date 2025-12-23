@@ -10,41 +10,50 @@ st.set_page_config(page_title="GRVT 실시간 모니터", layout="wide")
 def get_grvt_data_final(api_key, api_secret, sub_id):
     try:
         base_url = "https://api.grvt.io"
+        # 1. 타임스탬프 (밀리초 단위 문자열)
         timestamp = str(int(time.time() * 1000))
+        method = "GET"
         path = f"/v1/accounts/{sub_id}/summary"
         
-        message = timestamp + "GET" + path
-        signature = hmac.new(api_secret.encode('utf-8'), message.encode('utf-8'), hashlib.sha256).hexdigest()
+        # 2. 서명 생성 (이 순서와 대소문자가 틀리면 '연결불가'가 뜹니다)
+        # GRVT 규격: timestamp + method + path
+        message = timestamp + method + path
+        signature = hmac.new(
+            api_secret.encode('utf-8'),
+            message.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
         
+        # 3. 헤더 구성 (모두 소문자로 작성하는 것이 안전합니다)
         headers = {
             "grvt-api-key": api_key,
             "grvt-timestamp": timestamp,
             "grvt-signature": signature,
-            "Accept": "application/json"
+            "accept": "application/json"
         }
         
-        response = requests.get(f"{base_url}{path}", headers=headers, timeout=10)
+        # 4. 실제 데이터 요청
+        response = requests.get(base_url + path, headers=headers, timeout=10)
         
         if response.status_code == 200:
             data = response.json()
-            # 데이터가 들어있을 수 있는 모든 경로를 탐색
-            res = data.get('result', data) if isinstance(data, dict) else {}
-            
-            # 'total_equity' 또는 'equity' 중 존재하는 값을 가져옴
-            equity = res.get('total_equity') or res.get('equity') or 0
-            # 'margin_usage_ratio'가 없을 경우 0으로 처리
-            margin = res.get('margin_usage_ratio') or res.get('margin_usage') or 0
-            
+            # 데이터 추출 (구조가 중첩되어 있을 경우를 대비)
+            res = data.get('result', data)
             return {
-                "Equity": float(equity),
-                "Margin": float(margin) * 100,
+                "Equity": float(res.get('total_equity', 0)),
+                "Margin": float(res.get('margin_usage_ratio', 0)) * 100,
                 "Status": "✅ 연결됨"
             }
+        elif response.status_code == 401:
+            return {"Equity": 0, "Margin": 0, "Status": "❌ 키/비밀번호 오류"}
+        elif response.status_code == 404:
+            return {"Equity": 0, "Margin": 0, "Status": "❌ 계정ID(SubID) 오류"}
         else:
-            return {"Equity": 0, "Margin": 0, "Status": f"❌ 오류({response.status_code})"}
+            return {"Equity": 0, "Margin": 0, "Status": f"❌ 서버에러({response.status_code})"}
             
     except Exception as e:
-        return {"Equity": 0, "Margin": 0, "Status": "❌ 연결불가"}
+        # 접속 자체가 안될 때 에러 메시지를 구체적으로 표시
+        return {"Equity": 0, "Margin": 0, "Status": f"❌ 연결실패({str(e)[:10]})"}
 
 st.title("🛡️ GRVT Multi-Account Monitor")
 
