@@ -1,25 +1,43 @@
 import streamlit as st
 import pandas as pd
-import requests # 초보자를 위해 SDK 대신 직접 API 호출 방식을 사용합니다
+import time
 
-st.set_page_config(page_title="GRVT 통합 관리", layout="wide")
-st.title("📱 GRVT 실시간 리스크 대시보드")
+st.set_page_config(page_title="GRVT 실시간 모니터", layout="wide")
 
-# 보안을 위해 실제 키는 3단계에서 입력합니다.
-def get_data(api_key, sub_id):
-    # 이 부분은 GRVT의 공개 API 주소로 정보를 가져오는 가상의 예시입니다.
-    # 실제 연동 시에는 Streamlit Secrets에 저장된 키를 사용하게 됩니다.
-    return {"Account": sub_id[:8], "Equity": 10250.5, "Margin_Ratio": 15.2, "uPnL": +150.2}
+# --- 1. 실시간 업데이트용 '조각(Fragment)' 설정 ---
+# run_every=30 은 30초마다 이 함수만 다시 실행하라는 뜻입니다.
+@st.fragment(run_every=30)
+def show_realtime_data():
+    all_data = []
+    
+    # Secrets에서 6개 계정 읽어오기
+    for i in range(1, 7):
+        acc_name = f"account{i}"
+        if acc_name in st.secrets:
+            # 여기에 실제 API 호출 함수를 넣습니다. (지금은 예시 데이터)
+            acc_info = st.secrets[acc_name]
+            all_data.append({
+                "계정": f"Account {i}",
+                "Equity": 12500.0 + (i * 100), # 실제 자산 데이터가 들어갈 자리
+                "마진비율(%)": 15.0 + (i * 5),  # 실제 마진 데이터
+                "업데이트": time.strftime("%H:%M:%S") # 현재 시간 표시
+            })
+    
+    if all_data:
+        df = pd.DataFrame(all_data)
+        
+        # 화면 출력 (표)
+        st.subheader("📊 실시간 계정 상태 (30초마다 갱신)")
+        st.dataframe(df, use_container_width=True)
+        
+        # 합산 자산
+        total = df["Equity"].sum()
+        st.metric("총 통합 자산", f"${total:,.2f}")
+    else:
+        st.error("Secrets 설정을 확인해주세요!")
 
-# 화면 구성
-st.subheader("모든 계정 요약")
-# 실제로는 반복문을 통해 여러 계정 데이터를 합칩니다.
-data = [get_data("key1", "acc_main"), get_data("key2", "acc_sub1")]
-df = pd.DataFrame(data)
+# --- 2. 메인 화면 실행 ---
+st.title("🛡️ GRVT Multi-Account Live Monitor")
+show_realtime_data()
 
-# 리스크 시각화 (마진 비율이 높으면 빨간색)
-st.data_editor(df, column_config={
-    "Margin_Ratio": st.column_config.ProgressColumn("리스크(%)", min_value=0, max_value=100)
-})
-
-st.info("💡 30분마다 자동 새로고침됩니다.")
+st.caption("화면이 깜빡이지 않고 데이터만 30초마다 조용히 업데이트됩니다.")
