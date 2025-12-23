@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import time
-from grvt_pysdk import GrvtApi # 공식 SDK 사용
+from grvt_pysdk.api import GrvtApi # 공식 SDK 사용
 
 st.set_page_config(page_title="GRVT 통합 모니터", layout="wide")
 
