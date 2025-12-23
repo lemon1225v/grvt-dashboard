@@ -6,19 +6,21 @@ import hashlib
 import requests
 import urllib3
 
-# 1. HTTPS 인증서 경고 무시 (로그에 뜬 HTTPSConne 에러 해결책)
+# 1. HTTPS 보안 인증서 경고 및 연결 오류 해결
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-st.set_page_config(page_title="GRVT 자산 모니터", layout="wide")
+st.set_page_config(page_title="GRVT 통합 모니터", layout="wide")
 
 def get_grvt_data(api_key, api_secret, sub_id):
+    """
+    GRVT API 통신 함수
+    """
     try:
         base_url = "https://api.grvt.io"
-        # 사용자님의 숫자형 sub_id가 포함된 경로
         path = f"/v1/accounts/{sub_id}/summary"
         timestamp = str(int(time.time() * 1000))
         
-        # 2. 서명 생성 (메인넷 규격 준수)
+        # 보안 서명 생성
         message = timestamp + "GET" + path
         signature = hmac.new(
             api_secret.encode('utf-8'),
@@ -33,7 +35,7 @@ def get_grvt_data(api_key, api_secret, sub_id):
             "Accept": "application/json"
         }
         
-        # 3. 데이터 요청 (인증서 검증 우회로 연결 성공률 극대화)
+        # verify=False를 통해 HTTPS 연결 실패 문제를 강제로 해결합니다.
         response = requests.get(
             base_url + path, 
             headers=headers, 
@@ -43,15 +45,18 @@ def get_grvt_data(api_key, api_secret, sub_id):
         
         if response.status_code == 200:
             raw = response.json()
-            # GRVT 응답 구조에서 'result' 키 유무에 상관없이 데이터를 가져옴
+            # 데이터가 'result' 키 내부에 있을 경우를 대비합니다.
             data = raw.get('result', raw)
             
             equity = float(data.get('total_equity', 0))
             margin = float(data.get('margin_usage_ratio', 0)) * 100
             
             return {"Equity": equity, "Margin": margin, "Status": "✅ 연결됨"}
-        
         elif response.status_code in [401, 403]:
-            return {"Equity": 0, "Margin": 0, "Status": "❌ 키 권한오류"}
+            return {"Equity": 0, "Margin": 0, "Status": "❌ 권한오류"}
         else:
-            return {"Equity": 0, "Margin": 0, "Status":
+            return {"Equity": 0, "Margin": 0, "Status": f"❌ 서버에러({response.status_code})"}
+            
+    except Exception as e:
+        # 에러 발생 시 종류를 표시합니다.
+        return {"Equity": 0, "Margin": 0, "Status": f"❌ 연결불가({type(e).__name__[:5]})
