@@ -5,46 +5,55 @@ import hmac
 import hashlib
 import requests
 
-st.set_page_config(page_title="GRVT 통합 모니터", layout="wide")
+st.set_page_config(page_title="GRVT 실시간 모니터", layout="wide")
 
-# --- 1. SDK 없이 직접 API 호출하는 함수 ---
-def get_grvt_data_direct(api_key, api_secret, sub_id):
+def get_grvt_data_final(api_key, api_secret, sub_id):
     try:
+        # 1. 환경 설정 (메인넷 주소)
         base_url = "https://api.grvt.io"
         timestamp = str(int(time.time() * 1000))
+        method = "GET"
+        # 정확한 엔드포인트 경로
         path = f"/v1/accounts/{sub_id}/summary"
         
-        # 보안 서명 생성 (GRVT 규격)
-        message = timestamp + "GET" + path
+        # 2. GRVT 전용 보안 서명(Signature) 생성
+        # 주의: 메서드(GET)는 대문자여야 하며 경로가 정확해야 합니다.
+        message = timestamp + method + path
         signature = hmac.new(
             api_secret.encode('utf-8'),
             message.encode('utf-8'),
             hashlib.sha256
         ).hexdigest()
         
+        # 3. 헤더 구성
         headers = {
-            "GRVT-API-KEY": api_key,
-            "GRVT-TIMESTAMP": timestamp,
-            "GRVT-SIGNATURE": signature,
-            "Content-Type": "application/json"
+            "grvt-api-key": api_key,
+            "grvt-timestamp": timestamp,
+            "grvt-signature": signature,
+            "Accept": "application/json"
         }
         
+        # 4. 요청 보내기
         response = requests.get(f"{base_url}{path}", headers=headers, timeout=10)
         
         if response.status_code == 200:
             data = response.json()
+            # API 결과값에서 데이터 추출 (GRVT 응답 구조에 맞춤)
             return {
                 "Equity": float(data.get('total_equity', 0)),
                 "Margin": float(data.get('margin_usage_ratio', 0)) * 100,
                 "Status": "✅ 연결됨"
             }
+        elif response.status_code == 401 or response.status_code == 403:
+            return {"Equity": 0, "Margin": 0, "Status": "❌ 키오류(권한)"}
         else:
             return {"Equity": 0, "Margin": 0, "Status": f"❌ 오류({response.status_code})"}
+            
     except Exception as e:
-        return {"Equity": 0, "Margin": 0, "Status": "❌ 통신실패"}
+        return {"Equity": 0, "Margin": 0, "Status": "❌ 연결불가"}
 
-# --- 2. 대시보드 화면 구성 ---
-st.title("🛡️ GRVT Live Account Monitor")
+# --- 화면 UI ---
+st.title("🛡️ GRVT Multi-Account Monitor")
 
 if st.button('🔄 지금 수동 새로고침'):
     st.rerun()
@@ -56,25 +65,26 @@ def show_dashboard():
         name = f"GR{i}"
         if name in st.secrets:
             sec = st.secrets[name]
-            # 직접 호출 함수 사용
-            res = get_grvt_data_direct(sec['api_key'], sec['api_secret'], sec['sub_id'])
+            # 최종 함수 호출
+            res = get_grvt_data_final(sec['api_key'], sec['api_secret'], sec['sub_id'])
             all_results.append({
                 "계정": name,
                 "순자산(Equity)": res["Equity"],
                 "마진비율(%)": res["Margin"],
                 "상태": res["Status"],
-                "갱신시간": time.strftime("%H:%M:%S")
+                "갱신": time.strftime("%H:%M:%S")
             })
 
     if all_results:
         df = pd.DataFrame(all_results)
-        st.metric("총 통합 순자산", f"${df['순자산(Equity)'].sum():,.2f}")
+        st.metric("총 통합 자산", f"${df['순자산(Equity)'].sum():,.2f}")
+        # 최신 Streamlit 규격에 맞게 width='stretch' 사용
         st.dataframe(
             df.style.format({"순자산(Equity)": "{:,.2f}", "마진비율(%)": "{:.1f}%"})
             .background_gradient(subset=['마진비율(%)'], cmap="Reds", vmin=0, vmax=100),
-            use_container_width=True, hide_index=True
+            width='stretch', hide_index=True
         )
     else:
-        st.error("Secrets 설정을 확인하세요!")
+        st.error("Secrets에 [GR1]~[GR6] 정보가 없습니다!")
 
 show_dashboard()
