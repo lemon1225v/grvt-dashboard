@@ -6,19 +6,23 @@ import hashlib
 import requests
 import urllib3
 
-# SSL 인증 경고 무시
+# 1. SSL 인증 및 경고 강제 무시 (연결 안정성 확보)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-st.set_page_config(page_title="GRVT Multi-Monitor", layout="wide")
+st.set_page_config(page_title="GRVT 통합 모니터", layout="wide")
 
 def get_grvt_data(api_key, api_secret, sub_id):
+    """
+    GRVT API 연동 및 데이터 추출
+    """
     try:
+        # sub_id가 숫자형일 경우를 대비해 공백 없는 문자열로 정제
+        clean_sub_id = str(sub_id).strip()
         base_url = "https://api.grvt.io"
-        # 숫자형 sub_id를 문자열로 변환하여 경로 생성
-        path = f"/v1/accounts/{str(sub_id).strip()}/summary"
+        path = f"/v1/accounts/{clean_sub_id}/summary"
         timestamp = str(int(time.time() * 1000))
         
-        # 보안 서명 생성
+        # 보안 서명(Signature) 생성 - 규격 엄수
         message = timestamp + "GET" + path
         signature = hmac.new(
             api_secret.encode('utf-8'),
@@ -31,15 +35,14 @@ def get_grvt_data(api_key, api_secret, sub_id):
             "grvt-timestamp": timestamp,
             "grvt-signature": signature,
             "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            "User-Agent": "Mozilla/5.0" # 서버 차단 방지용
         }
         
-        # 세션을 사용하여 연결 안정성 강화
-        session = requests.Session()
-        response = session.get(
+        # 2. 타임아웃 연장 및 인증 검사 우회
+        response = requests.get(
             base_url + path, 
             headers=headers, 
-            timeout=20, # 타임아웃을 20초로 연장
+            timeout=20, 
             verify=False
         )
         
@@ -52,11 +55,21 @@ def get_grvt_data(api_key, api_secret, sub_id):
                 "Status": "✅ 연결됨"
             }
         else:
+            # 401: 키 오류, 403: 권한 오류 등 구체적 표시
             return {"Equity": 0, "Margin": 0, "Status": f"❌ 오류({response.status_code})"}
             
-    except Exception as e:
-        # 에러 발생 시 로그에 상세 원인 출력 (디버깅용)
-        print(f"Error: {str(e)}")
+    except Exception:
         return {"Equity": 0, "Margin": 0, "Status": "❌ 접속불가"}
 
 st.title("🛡️ GRVT Multi-Account Monitor")
+
+# --- 대시보드 출력부 ---
+all_data = []
+for i in range(1, 7):
+    name = f"GR{i}"
+    if name in st.secrets:
+        acc = st.secrets[name]
+        res = get_grvt_data(acc['api_key'], acc['api_secret'], acc['sub_id'])
+        all_data.append({
+            "계정": name,
+            "순자산
