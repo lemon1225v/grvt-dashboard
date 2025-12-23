@@ -59,4 +59,23 @@ def show_dashboard():
     all_results = []
     for i in range(1, 7):
         name = f"GR{i}"
-        if name in st.secrets
+        if name in st.secrets:
+            s = st.secrets[name]
+            res = get_grvt_data(s['api_key'], s['api_secret'], s['sub_id'])
+            all_results.append({
+                "계정": name,
+                "순자산(Equity)": res["Equity"],
+                "마진비율(%)": res["Margin"],
+                "상태": res["Status"],
+                "시간": time.strftime("%H:%M:%S")
+            })
+
+    if all_results:
+        df = pd.DataFrame(all_results)
+        st.metric("총 합계 자산", f"${df['순자산(Equity)'].sum():,.2f}")
+        st.dataframe(df, use_container_width=True, hide_index=True)
+    else:
+        st.error("Secrets 설정(GR1~GR6)을 확인해주세요.")
+
+# 함수 실행 (이 줄까지 반드시 복사해야 합니다)
+show_dashboard()
